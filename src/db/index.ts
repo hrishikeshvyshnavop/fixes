@@ -138,28 +138,41 @@ CREATE INDEX IF NOT EXISTS widget_sessions_user_idx ON widget_sessions(user_id);
 
 type DB = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-async function create(): Promise<DB> {
+type Conn = { db: DB; exec: (sql: string) => Promise<unknown> };
+
+async function connect(): Promise<Conn> {
   if (process.env.DATABASE_URL) {
     const { drizzle } = await import("drizzle-orm/node-postgres");
     const { Pool } = await import("pg");
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    await pool.query(BOOTSTRAP);
-    return drizzle(pool, { schema }) as unknown as DB;
+    return { db: drizzle(pool, { schema }) as unknown as DB, exec: (s) => pool.query(s) };
   }
   // Local dev: embedded Postgres (WASM), persisted to ./.pglite
   const { drizzle } = await import("drizzle-orm/pglite");
   const { PGlite } = await import("@electric-sql/pglite");
   const client = new PGlite(process.env.PGLITE_DIR ?? "./.pglite");
-  await client.exec(BOOTSTRAP);
-  return drizzle(client, { schema }) as unknown as DB;
+  return { db: drizzle(client, { schema }) as unknown as DB, exec: (s) => client.exec(s) };
 }
 
-// Survive Next.js dev hot reloads (one PGlite instance per process).
-const g = globalThis as unknown as { __db?: Promise<DB> };
+// Survive Next.js dev hot reloads (one connection / PGlite instance per process). The bootstrap
+// re-runs whenever its SQL changes, so a running dev server picks up new columns and tables.
+const g = globalThis as unknown as { __conn?: Promise<Conn>; __ready?: Promise<DB>; __bootSql?: string };
 
 export function getDb(): Promise<DB> {
-  g.__db ??= create();
-  return g.__db;
+  g.__conn ??= connect();
+  if (!g.__ready || g.__bootSql !== BOOTSTRAP) {
+    g.__bootSql = BOOTSTRAP;
+    g.__ready = g.__conn
+      .then(async (c) => {
+        await c.exec(BOOTSTRAP);
+        return c.db;
+      })
+      .catch((e) => {
+        g.__bootSql = undefined; // retry on the next call
+        throw e;
+      });
+  }
+  return g.__ready;
 }
 
 export { schema, sql };
