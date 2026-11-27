@@ -115,7 +115,26 @@ export const invites = pgTable("invites", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Personal access tokens for the MCP server. Only the sha256 is stored; the token is shown once.
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    // First characters of the token ("fx_ab12…"), so people can tell tokens apart.
+    hint: text("hint").notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("api_tokens_user_idx").on(t.userId)],
+);
+
 export type User = typeof users.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Reply = typeof replies.$inferSelect;

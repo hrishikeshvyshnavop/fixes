@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { deleteProject, removeMember, revokeInvite, setMemberRole } from "@/app/actions";
+import { allowBlockedOrigin, deleteProject, removeMember, revokeInvite, setMemberRole } from "@/app/actions";
 import { getAccess } from "@/lib/auth";
 import { TYPE_META, isProjectType, supportsWidget } from "@/lib/project-types";
 import { ago, expiresIn, hue, initials } from "@/lib/ui";
@@ -105,7 +105,15 @@ export default async function ProjectSettings({ params }: { params: Promise<{ id
                   <span>
                     Loaded on <span className="font-mono">{project.widgetBlockedOrigin}</span> {ago(project.widgetBlockedAt!)}, but
                     that site isn&apos;t in <a href="#general" className="underline underline-offset-4">Allowed origins</a>, so it was
-                    refused. Add it below, or clear the list to allow any site.
+                    refused and the widget stays hidden there.
+                    {isOwner && (
+                      <form action={allowBlockedOrigin} className="mt-2">
+                        {hidden("projectId", id)}
+                        <button className={`${button.primary} h-7`}>
+                          Allow <span className="font-mono">{project.widgetBlockedOrigin}</span>
+                        </button>
+                      </form>
+                    )}
                   </span>
                 </span>
               ) : project.widgetSeenAt ? (

@@ -107,6 +107,18 @@ CREATE INDEX IF NOT EXISTS invites_project_idx ON invites(project_id);
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub text;
 CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_idx ON users(google_sub) WHERE google_sub IS NOT NULL;
+
+-- MCP server personal access tokens (sha256 only).
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  token_hash text NOT NULL UNIQUE,
+  hint text NOT NULL,
+  last_used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS api_tokens_user_idx ON api_tokens(user_id);
 `;
 
 type DB = PgDatabase<PgQueryResultHKT, typeof schema>;

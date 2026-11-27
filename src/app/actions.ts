@@ -310,3 +310,56 @@ export async function setMemberRole(fd: FormData) {
     .where(and(eq(schema.projectMembers.projectId, projectId), eq(schema.projectMembers.userId, userId)));
   refresh();
 }
+
+// ---------- MCP access tokens ----------
+
+export type TokenState = { token?: string; name?: string; error?: string } | undefined;
+const MAX_TOKENS = 20;
+
+export async function createApiToken(_prev: TokenState, fd: FormData): Promise<TokenState> {
+  const user = await requireUser();
+  const name = field(fd, "name").slice(0, 60) || "MCP token";
+  const db = await getDb();
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.apiTokens)
+    .where(eq(schema.apiTokens.userId, user.id));
+  if (n >= MAX_TOKENS) return { error: `You can have up to ${MAX_TOKENS} tokens. Revoke one first.` };
+  const token = `fx_${newToken()}`;
+  await db.insert(schema.apiTokens).values({
+    id: nanoid(12),
+    userId: user.id,
+    name,
+    tokenHash: sha256(token),
+    hint: token.slice(0, 7),
+  });
+  revalidatePath("/ai/mcp");
+  return { token, name };
+}
+
+export async function revokeApiToken(fd: FormData) {
+  const user = await requireUser();
+  const db = await getDb();
+  await db
+    .delete(schema.apiTokens)
+    .where(and(eq(schema.apiTokens.id, field(fd, "tokenId")), eq(schema.apiTokens.userId, user.id)));
+  revalidatePath("/ai/mcp");
+}
+
+/** Adds the origin the widget was last refused on to the project's allow-list. */
+export async function allowBlockedOrigin(fd: FormData) {
+  const projectId = field(fd, "projectId");
+  const { project } = await requireOwner(projectId);
+  const origin = project.widgetBlockedOrigin;
+  if (!origin) return;
+  const db = await getDb();
+  await db
+    .update(schema.projects)
+    .set({
+      allowedOrigins: parseOrigins(`${project.allowedOrigins}, ${origin}`).join(", "),
+      widgetBlockedAt: null,
+      widgetBlockedOrigin: null,
+    })
+    .where(eq(schema.projects.id, projectId));
+  revalidatePath(`/projects/${projectId}/settings`);
+}

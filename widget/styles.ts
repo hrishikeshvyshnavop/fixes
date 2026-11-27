@@ -49,4 +49,9 @@ label.check { display: flex; gap: 6px; align-items: center; font-size: 12px; col
 .status.open { background: #eef2ff; color: #4338ca; }
 .status.resolved { background: #d1fae5; color: #047857; }
 .err { color: #b91c1c; font-size: 12px; margin-top: 6px; }
+.setup { position: fixed; right: 20px; bottom: 20px; width: 340px; max-width: calc(100vw - 40px); background: #fffbeb; color: #78350f;
+  border: 1px solid #fcd34d; border-radius: 10px; padding: 10px 30px 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.15); font-size: 12px; }
+.setup strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.setup p { margin: 0; }
+.setup .close { position: absolute; top: 6px; right: 6px; color: #b45309; }
 `;

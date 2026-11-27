@@ -5,7 +5,7 @@ import { auth } from "@/lib/neon-auth";
 // Public: auth pages, invite links, the widget API/script and the demo page.
 export default auth.middleware({
   loginUrl: "/login",
-  publicRoutes: ["/login", "/signup", "/invite", "/api/widget", "/widget.js", "/demo.html"],
+  publicRoutes: ["/login", "/signup", "/invite", "/api/widget", "/api/mcp", "/widget.js", "/demo.html"],
 });
 
 export const config = {

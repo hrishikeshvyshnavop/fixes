@@ -116,7 +116,7 @@ type Draft = {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+    if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status });
     return data as T;
   }
 
@@ -127,8 +127,30 @@ type Draft = {
       comments = data.comments;
       render();
     } catch (e) {
-      console.warn("[feedback]", e);
+      const status = (e as { status?: number }).status;
+      if (status === 403 || status === 404) setupProblem(status);
+      else console.warn("[feedback]", e);
     }
+  }
+
+  // The site owner needs to change a setting. Explain it in the console everywhere, and on
+  // local/dev addresses also show a notice on the page (real visitors never see it).
+  function setupProblem(status: number) {
+    const fix =
+      status === 403
+        ? `This site (${location.origin}) isn't in the project's Allowed origins. Add it in Fixes → project → Settings → Allowed origins (or use the "Allow" button on the Install card).`
+        : `The project key "${KEY}" doesn't exist. Copy the snippet again from Fixes → project → Settings → Install.`;
+    console.warn(`[Fixes] Widget disabled. ${fix}`);
+    const local = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|.+\.local)$/i.test(location.hostname);
+    if (!local) return;
+    const note = h(
+      "div",
+      { className: "setup", role: "status" },
+      h("strong", {}, "Fixes widget is disabled"),
+      h("p", {}, fix),
+      h("button", { className: "close", title: "Dismiss", onclick: () => note.remove() }, "×"),
+    );
+    root.append(note);
   }
 
   // ---------- positioning ----------

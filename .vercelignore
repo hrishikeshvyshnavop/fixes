@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+.pglite
+.next
+.next-*
+node_modules
+*.code-workspace
