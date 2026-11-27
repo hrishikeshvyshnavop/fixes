@@ -4,6 +4,7 @@ const svg = (body: string, size = 16) =>
 
 export const ICON = {
   inspect: svg('<path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1M9 21h2M14 3h1M3 9v1M21 9v2M3 14v1"/>'),
+  unread: svg('<path d="M22 10.5V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/><path d="m2 7 8.97 5.7a1.94 1.94 0 0 0 2.06 0L16 10.8"/><circle cx="19" cy="5" r="3" fill="currentColor"/>'),
   menu: svg('<path d="M4 7h16M4 12h16M4 17h10"/>'),
   camera: svg('<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>'),
   at: svg('<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>'),

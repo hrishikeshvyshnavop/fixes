@@ -260,7 +260,7 @@ textarea::placeholder { color: var(--muted-foreground); }
   box-shadow: 0 24px 64px rgba(0,0,0,.45); }
 .toolbar.dock.left .cmd { right: auto; left: calc(100% + 12px); }
 .cmd-head { padding: 12px 12px 10px; border-bottom: 1px solid var(--border); }
-.chip { display: inline-block; font-size: 11px; font-weight: 500; color: var(--muted-foreground); border: 1px solid var(--border);
+.cmd-chip { display: inline-block; font-size: 11px; font-weight: 500; color: var(--muted-foreground); border: 1px solid var(--border);
   border-radius: 6px; padding: 1px 7px; background: rgba(255,255,255,.04); }
 .cmd-search { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .cmd-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--foreground); font: inherit; font-size: 16px; padding: 2px 0; }
@@ -376,4 +376,33 @@ textarea::placeholder { color: var(--muted-foreground); }
   color: var(--muted-foreground); font-size: 12px; text-align: left; cursor: pointer; }
 .peek-more:hover { color: var(--foreground); background: rgba(255,255,255,.04); }
 .peek-meta .tag { font-size: 10.5px; padding: 0 5px; border-radius: 4px; background: rgba(255,255,255,.08); color: #a1a1aa; }
+
+/* resolve: a check inside a circle; filled green once resolved */
+.icon-btn.resolve svg { width: 17px; height: 17px; }
+.icon-btn.resolve:hover { color: var(--success); }
+.icon-btn.resolve.done { color: var(--success); }
+.icon-btn.resolve.done svg circle { fill: var(--success); stroke: var(--success); }
+.icon-btn.resolve.done svg path { stroke: #fff; }
+
+/* movable pins */
+.pin.movable { cursor: grab; touch-action: none; }
+.pin.dragging { cursor: grabbing; transform: scale(1.15); transform-origin: bottom left; z-index: 2; box-shadow: 0 8px 24px rgba(0,0,0,.35); transition: none; }
+
+/* open animations: panels grow out of the pill */
+@keyframes fx-grow-left { from { opacity: 0; transform: translateX(14px) scale(.92); clip-path: inset(30% 0 30% 70% round 999px); }
+  to { opacity: 1; transform: none; clip-path: inset(0 0 0 0 round 14px); } }
+@keyframes fx-grow-right { from { opacity: 0; transform: translateX(-14px) scale(.92); clip-path: inset(30% 70% 30% 0 round 999px); }
+  to { opacity: 1; transform: none; clip-path: inset(0 0 0 0 round 14px); } }
+@keyframes fx-pop { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+.cmd.enter, .peek.enter { transform-origin: right center; animation: fx-grow-left .26s cubic-bezier(.2,.9,.25,1) both; }
+.toolbar.dock.left .cmd.enter, .toolbar.dock.left .peek.enter { transform-origin: left center; animation-name: fx-grow-right; }
+.inspector.enter { animation: fx-grow-left .26s cubic-bezier(.2,.9,.25,1) both; }
+.card.enter, .inbox.enter { animation: fx-pop .18s cubic-bezier(.2,.9,.25,1) both; }
+@media (prefers-reduced-motion: reduce) { .enter { animation: none !important; } }
+
+/* inbox tabs: fixed-height filter row so switching never shifts the list */
+.inbox .filters { min-height: 28px; align-items: center; }
+.inbox .mark-all { margin-left: auto; }
+.inbox .mark-all.hidden { visibility: hidden; pointer-events: none; }
+.inbox .seg button, .inbox .chip { transition: background-color .12s, color .12s; }
 `;

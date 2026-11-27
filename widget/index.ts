@@ -273,8 +273,13 @@ const THREAD_PARAM = "fixes_thread";
   };
   const isUnread = (t: Thread) => {
     if (!me) return false;
+    if (seen[t.id] === "!") return true; // marked unread by hand
     const a = lastActivity(t);
     return a.by !== me.id && (seen[t.id] ?? "") < a.at;
+  };
+  const markUnread = (t: Thread) => {
+    seen[t.id] = "!";
+    store.set(seenKey(), JSON.stringify(seen));
   };
   const markSeen = (...ts: Thread[]) => {
     for (const t of ts) seen[t.id] = lastActivity(t).at;
@@ -473,6 +478,65 @@ const THREAD_PARAM = "fixes_thread";
     card.style.top = `${top}px`;
   }
 
+  // ---------- move a pin to another element ----------
+  let pinDrag: { t: Thread; el: HTMLElement; sx: number; sy: number; moved: boolean } | null = null;
+  let pinDragged = false; // swallow the click that ends a drag
+  const canMove = (t: Thread) => !!me && (t.authorId === me.id || me.role === "owner");
+
+  function onPinDown(e: PointerEvent, t: Thread, el: HTMLElement) {
+    if (e.button !== 0 || !canMove(t)) return;
+    pinDrag = { t, el, sx: e.clientX, sy: e.clientY, moved: false };
+  }
+  function onPinMove(e: PointerEvent) {
+    const d = pinDrag;
+    if (!d) return;
+    if (!d.moved) {
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return;
+      d.moved = true;
+      d.el.classList.add("dragging");
+      document.documentElement.style.cursor = "grabbing";
+    }
+    e.preventDefault();
+    d.el.style.left = `${e.clientX}px`;
+    d.el.style.top = `${e.clientY}px`;
+    const target = targetAt(e.clientX, e.clientY);
+    if (target && target !== document.documentElement && target !== document.body) {
+      const r = target.getBoundingClientRect();
+      Object.assign(highlight.style, { display: "block", left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+      hlLabel.replaceChildren(h("span", {}, `Move to ${describe(target).label}`));
+      hlLabel.style.display = "flex";
+      hlLabel.style.left = `${Math.max(4, r.left)}px`;
+      hlLabel.style.top = `${r.top > 26 ? r.top - 24 : Math.min(innerHeight - 22, r.bottom + 4)}px`;
+      if (!highlight.isConnected) root.append(highlight, hlLabel);
+    }
+  }
+  function onPinUp(e: PointerEvent) {
+    const d = pinDrag;
+    pinDrag = null;
+    if (!d?.moved) return;
+    pinDragged = true;
+    setTimeout(() => (pinDragged = false), 0);
+    highlight.style.display = hlLabel.style.display = "none";
+    document.documentElement.style.cursor = "";
+    const target = targetAt(e.clientX, e.clientY) ?? document.body;
+    const r = target.getBoundingClientRect();
+    const move = {
+      selector: selectorFor(target),
+      offsetX: r.width ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0,
+      offsetY: r.height ? Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) : 0,
+      pageX: e.clientX + scrollX,
+      pageY: e.clientY + scrollY,
+    };
+    Object.assign(d.t, move); // move it right away; the server confirms in the background
+    render();
+    api(`/api/widget/comments/${d.t.id}`, { method: "PATCH", body: JSON.stringify({ key: KEY, move }) })
+      .then(() => flash(`Moved ${label(d.t)}`))
+      .catch((err) => {
+        flash((err as Error).message);
+        load();
+      });
+  }
+
   // ---------- movable toolbar ----------
   let toolbarEl: HTMLElement | null = null;
   let drag: { sx: number; sy: number; left: number; top: number; w: number; h: number; moved: boolean } | null = null;
@@ -656,7 +720,11 @@ const THREAD_PARAM = "fixes_thread";
       pageY: y + scrollY,
       details: describe(el),
       quote,
-      screenshot: capture({ x: rect.left, y: rect.top, w: rect.width, h: rect.height }),
+      screenshot: new Promise<string | null>((resolve) =>
+        requestAnimationFrame(() =>
+          setTimeout(() => capture({ x: rect.left, y: rect.top, w: rect.width, h: rect.height }).then(resolve, () => resolve(null)), 50),
+        ),
+      ),
     };
     d.screenshot.then((s) => {
       d.shot = s;
@@ -1114,7 +1182,7 @@ const THREAD_PARAM = "fixes_thread";
 
     return h(
       "div",
-      { className: "card composer dk", role: "dialog", "aria-label": "New comment" },
+      { className: `card composer dk${enter("composer")}`, role: "dialog", "aria-label": "New comment" },
       d.quote && h("div", { className: "c-quote" }, `“${d.quote}”`),
       box,
       errors.new && h("div", { className: "err" }, errors.new),
@@ -1216,7 +1284,7 @@ const THREAD_PARAM = "fixes_thread";
     const sk = `status:${t.id}`;
     return h(
       "div",
-      { className: "card", role: "dialog", "aria-label": `Comment ${label(t)}` },
+      { className: `card${enter(`card:${t.id}`)}`, role: "dialog", "aria-label": `Comment ${label(t)}` },
       h(
         "div",
         { className: "card-head" },
@@ -1224,13 +1292,21 @@ const THREAD_PARAM = "fixes_thread";
         h(
           "button",
           {
-            className: `icon-btn ${t.status === "resolved" ? "on" : ""}`,
-            title: t.status === "resolved" ? "Reopen" : "Resolve",
+            className: `icon-btn resolve ${t.status === "resolved" ? "done" : ""}`,
+            title: t.status === "resolved" ? "Resolved: click to reopen" : "Resolve",
+            "aria-label": t.status === "resolved" ? "Reopen" : "Resolve",
             disabled: !!busy[sk],
             onclick: () => toggleResolved(t),
           },
-          icon(t.status === "resolved" ? "checkCircle" : "circle"),
+          icon("checkCircle"),
         ),
+        iconBtn("unread", "Mark as unread", () => {
+          markUnread(t);
+          activeId = null;
+          editing = reactFor = null;
+          flash(`Marked ${label(t)} as unread`);
+          render();
+        }),
         iconBtn("link", "Copy link", () => copyLink(t)),
         iconBtn("x", "Close (Esc)", () => ((activeId = null), (editing = reactFor = null), render())),
       ),
@@ -1258,13 +1334,13 @@ const THREAD_PARAM = "fixes_thread";
     const list = source.filter((t) => inboxFilter === "all" || t.status === inboxFilter);
     const unread = source.filter(isUnread);
     const seg = (v: typeof inboxScope, text: string) =>
-      h("button", { className: inboxScope === v ? "on" : "", onclick: () => ((inboxScope = v), render()) }, text);
+      h("button", { className: inboxScope === v ? "on" : "", onclick: () => ((inboxScope = v), (listToTop = true), render()) }, text);
     const chip = (v: typeof inboxFilter, text: string) =>
-      h("button", { className: `chip ${inboxFilter === v ? "on" : ""}`, onclick: () => ((inboxFilter = v), render()) }, text);
+      h("button", { className: `chip ${inboxFilter === v ? "on" : ""}`, onclick: () => ((inboxFilter = v), (listToTop = true), render()) }, text);
 
     return h(
       "div",
-      { className: "inbox", role: "dialog", "aria-label": "Comments" },
+      { className: `inbox${enter("inbox")}`, role: "dialog", "aria-label": "Comments" },
       h(
         "div",
         { className: "inbox-head" },
@@ -1276,7 +1352,16 @@ const THREAD_PARAM = "fixes_thread";
           chip("open", "Open"),
           chip("resolved", "Resolved"),
           chip("all", "All"),
-          unread.length > 0 && h("button", { className: "btn ghost sm", onclick: () => (markSeen(...unread), render()) }, "Mark all read"),
+          h(
+            "button",
+            {
+              className: `btn ghost sm mark-all ${unread.length ? "" : "hidden"}`,
+              "aria-hidden": unread.length ? undefined : "true",
+              tabindex: unread.length ? undefined : "-1",
+              onclick: () => (markSeen(...unread), render()),
+            },
+            "Mark all read",
+          ),
         ),
       ),
       h(
@@ -1419,8 +1504,8 @@ const THREAD_PARAM = "fixes_thread";
     let n = -1;
     return h(
       "div",
-      { className: "cmd dk", role: "dialog", "aria-label": "Fixes menu" },
-      h("div", { className: "cmd-head" }, h("span", { className: "chip" }, "Fixes"), h("div", { className: "cmd-search" }, input, h("span", { className: "kbd" }, "Esc"))),
+      { className: `cmd dk${enter("menu")}`, role: "dialog", "aria-label": "Fixes menu" },
+      h("div", { className: "cmd-head" }, h("span", { className: "cmd-chip" }, "Fixes"), h("div", { className: "cmd-search" }, input, h("span", { className: "kbd" }, "Esc"))),
       h(
         "div",
         { className: "cmd-body" },
@@ -1475,7 +1560,7 @@ const THREAD_PARAM = "fixes_thread";
     };
     return h(
       "div",
-      { className: "peek dk", role: "region", "aria-label": "Unread comments" },
+      { className: `peek dk${enter("peek")}`, role: "region", "aria-label": "Unread comments" },
       h(
         "div",
         { className: "peek-head" },
@@ -1575,7 +1660,7 @@ const THREAD_PARAM = "fixes_thread";
 
   function inspectorPanel() {
     const el = inspected?.isConnected ? inspected : null;
-    const panel = h("div", { className: "inspector dk", role: "dialog", "aria-label": "CSS inspector" });
+    const panel = h("div", { className: `inspector dk${enter("inspector")}`, role: "dialog", "aria-label": "CSS inspector" });
     const head = h(
       "div",
       { className: "ins-head" },
@@ -1707,14 +1792,30 @@ const THREAD_PARAM = "fixes_thread";
     return panel;
   }
 
+  /** Side panels (inspector, inbox) open next to the pill instead of underneath it. */
   function placeInspector() {
-    const panel = root.querySelector<HTMLElement>(".inspector");
     const tb = toolbarEl?.getBoundingClientRect();
-    if (!panel || !tb) return;
-    panel.style.left = panel.style.right = "";
-    if (tb.left + tb.width / 2 > innerWidth / 2) panel.style.right = `${Math.round(innerWidth - tb.left + 12)}px`;
-    else panel.style.left = `${Math.round(tb.right + 12)}px`;
+    if (!tb) return;
+    for (const panel of root.querySelectorAll<HTMLElement>(".inspector, .inbox")) {
+      if (tb.left + tb.width / 2 > innerWidth / 2) {
+        panel.style.left = "auto";
+        panel.style.right = `${Math.round(innerWidth - tb.left + 12)}px`;
+      } else {
+        panel.style.right = "auto";
+        panel.style.left = `${Math.round(tb.right + 12)}px`;
+      }
+    }
   }
+
+  // ---------- open animations ----------
+  // render() rebuilds the DOM, so only add the "enter" class on the render where a panel first appears.
+  let listToTop = false;
+  let wasOpen = new Set<string>();
+  let nowOpen = new Set<string>();
+  const enter = (key: string) => {
+    nowOpen.add(key);
+    return wasOpen.has(key) ? "" : " enter";
+  };
 
   // ---------- render ----------
   let pinEls: { el: HTMLElement; c: Anchor }[] = [];
@@ -1730,6 +1831,7 @@ const THREAD_PARAM = "fixes_thread";
     const bodyScroll = root.querySelector(".card-body")?.scrollTop ?? null;
 
     root.replaceChildren();
+    nowOpen = new Set();
     pinEls = [];
     cardEl = null;
 
@@ -1739,10 +1841,12 @@ const THREAD_PARAM = "fixes_thread";
         const el = h(
           "button",
           {
-            className: `pin ${t.status === "resolved" ? "resolved" : ""} ${activeId === t.id ? "active" : ""}`,
-            title: `${label(t)} · ${t.authorName}: ${t.body.slice(0, 80)}`,
+            className: `pin ${t.status === "resolved" ? "resolved" : ""} ${activeId === t.id ? "active" : ""} ${canMove(t) ? "movable" : ""}`,
+            title: `${label(t)} · ${t.authorName}: ${t.body.slice(0, 80)}${canMove(t) ? "\nDrag to move it to another element" : ""}`,
+            onpointerdown: (e: PointerEvent) => onPinDown(e, t, el),
             onclick: (e: Event) => {
               e.stopPropagation();
+              if (pinDragged) return;
               draft = null;
               editing = reactFor = null;
               if (activeId === t.id) activeId = null;
@@ -1807,10 +1911,12 @@ const THREAD_PARAM = "fixes_thread";
     root.append(toolbar());
 
     document.documentElement.style.cursor = (commenting && !draft) || inspecting ? "crosshair" : "";
+    wasOpen = nowOpen;
     reposition();
 
     const list = root.querySelector(".list");
-    if (list) list.scrollTop = listScroll;
+    if (list) list.scrollTop = listToTop ? 0 : listScroll;
+    listToTop = false;
     const body = root.querySelector(".card-body");
     if (body && bodyScroll !== null) body.scrollTop = bodyScroll;
 
@@ -1835,6 +1941,7 @@ const THREAD_PARAM = "fixes_thread";
     } else inspectHL.style.display = "none";
     if (cardEl && !toolbarEl?.isConnected) toolbarEl = null;
     for (const { el, c } of pinEls) {
+      if (pinDrag?.moved && pinDrag.el === el) continue;
       const p = pinPoint(c);
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
@@ -1868,6 +1975,8 @@ const THREAD_PARAM = "fixes_thread";
   document.addEventListener("selectionchange", onSelectionChange);
   document.addEventListener("keydown", onKey, true);
   addEventListener("pointermove", onDragMove, { passive: false });
+  addEventListener("pointermove", onPinMove, { passive: false });
+  addEventListener("pointerup", onPinUp);
   addEventListener("pointerup", onDragEnd);
   addEventListener("pointercancel", onDragEnd);
   addEventListener("scroll", schedule, { passive: true, capture: true });

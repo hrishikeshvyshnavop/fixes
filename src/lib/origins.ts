@@ -25,8 +25,26 @@ export function parseOrigins(list: string): string[] {
   return [...new Set(list.split(/[\s,]+/).map(normalizeOriginEntry).filter(Boolean))];
 }
 
+/**
+ * Local development addresses (any port): localhost, *.localhost, 127.x.x.x and [::1].
+ * Always allowed, so developers can run a site on any local port without editing the list.
+ * Only the developer's own machine can send these, and reading or posting comments still
+ * requires a signed-in project member; the allow-list keeps guarding real domains.
+ */
+export function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const h = u.hostname.toLowerCase();
+    return h === "localhost" || h.endsWith(".localhost") || /^127(\.\d{1,3}){3}$/.test(h) || h === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 export function originAllowed(origin: string, entries: string[]): boolean {
   if (!entries.length) return true;
+  if (isLoopbackOrigin(origin)) return true;
   let host = "";
   let full = "";
   try {

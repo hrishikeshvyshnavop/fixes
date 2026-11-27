@@ -135,12 +135,13 @@ export function ProjectSettingsForm({
           <input
             name="allowedOrigins"
             defaultValue={project.allowedOrigins}
-            placeholder="https://example.com, http://localhost:5173"
+            placeholder="https://example.com, *.staging.example.com"
             className={`${input} mt-1.5`}
           />
           <span className="mt-1.5 block text-xs text-muted-foreground">
             Comma-separated. <span className="font-mono">example.com</span> allows that site on http and https;{" "}
-            <span className="font-mono">*.example.com</span> adds subdomains. Leave empty to accept any site.
+            <span className="font-mono">*.example.com</span> adds subdomains. Leave empty to accept any site.{" "}
+            <span className="font-mono">localhost</span> on any port is always allowed for local development.
           </span>
         </label>
       </fieldset>
