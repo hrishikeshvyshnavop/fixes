@@ -39,6 +39,7 @@ export async function listComments(opts: {
       pageY: comments.pageY,
       body: comments.body,
       authorName: comments.authorName,
+      authorId: comments.authorId,
       status: comments.status,
       meta: comments.meta,
       createdAt: comments.createdAt,

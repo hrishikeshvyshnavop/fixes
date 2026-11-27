@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { getDb, schema } from "@/db";
 import type { CommentMeta } from "@/db/schema";
 import { listComments } from "@/lib/queries";
+import { requireWidgetUser, widgetUser } from "@/lib/widget-auth";
 import { handle, json, markWidgetSeen, normalisePageUrl, num, preflight, projectForKey, str, ApiError } from "@/lib/widget-api";
 
 export const OPTIONS = preflight;
@@ -16,7 +17,10 @@ export function GET(req: Request) {
     const pageUrl = normalisePageUrl(fullUrl);
     // The widget calls this on every page load, so it doubles as an install heartbeat.
     await markWidgetSeen(project.id, fullUrl);
-    return json(req, { comments: await listComments({ projectId: project.id, pageUrl }) });
+    // Comments are only visible to signed-in, invited project members.
+    const user = await widgetUser(req, project);
+    if (!user) return json(req, { comments: [], user: null });
+    return json(req, { comments: await listComments({ projectId: project.id, pageUrl }), user });
   });
 }
 
@@ -28,6 +32,7 @@ export function POST(req: Request) {
       throw new ApiError(400, "Invalid JSON");
     });
     const project = await projectForKey(req, b.key);
+    const user = await requireWidgetUser(req, project);
     const fullUrl = str(b.url, "url", 2048);
 
     let screenshot: string | null = null;
@@ -51,7 +56,8 @@ export function POST(req: Request) {
       pageX: num(b.pageX, "pageX"),
       pageY: num(b.pageY, "pageY"),
       body: str(b.body, "body", 5000),
-      authorName: str(b.authorName, "authorName", 100),
+      authorName: user.name,
+      authorId: user.id,
       screenshot,
       meta: {
         userAgent: req.headers.get("user-agent") ?? undefined,

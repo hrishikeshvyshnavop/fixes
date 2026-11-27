@@ -119,6 +119,21 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS api_tokens_user_idx ON api_tokens(user_id);
+
+-- Widget sign-in (Google, invited project members only).
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_id text;
+ALTER TABLE replies ADD COLUMN IF NOT EXISTS author_id text;
+CREATE TABLE IF NOT EXISTS widget_sessions (
+  id text PRIMARY KEY,
+  nonce_hash text UNIQUE, -- sha256 of the one-time nonce, cleared once claimed
+  token_hash text UNIQUE, -- sha256 of the bearer token, set when claimed
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  origin text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS widget_sessions_user_idx ON widget_sessions(user_id);
 `;
 
 type DB = PgDatabase<PgQueryResultHKT, typeof schema>;

@@ -4,7 +4,21 @@ export const CSS = `
 .root { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; color: #111827; font-size: 14px; line-height: 1.4; }
 .root > * { pointer-events: auto; }
 
-.launcher { position: fixed; right: 20px; bottom: 20px; display: flex; gap: 8px; align-items: center; }
+.launcher { position: fixed; right: 20px; bottom: 20px; display: flex; gap: 8px; align-items: center;
+  user-select: none; -webkit-user-select: none; touch-action: none; }
+.launcher.left { flex-direction: row-reverse; }
+.launcher.dragging, .launcher.dragging * { cursor: grabbing !important; }
+.launcher.dragging .btn { box-shadow: 0 10px 28px rgba(79,70,229,.45); }
+.grip { display: grid; grid-template-columns: repeat(2, 4px); gap: 3px; padding: 9px 7px; border-radius: 999px;
+  background: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.12); cursor: grab; }
+.grip:hover { background: #f3f4f6; }
+.avatar { width: 20px; height: 20px; border-radius: 50%; background: #4f46e5; color: #fff; font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; margin-left: -6px; }
+.notice { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 280px; background: #111827; color: #fff;
+  padding: 8px 12px; border-radius: 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); pointer-events: none; }
+.launcher.left .notice { right: auto; left: 0; }
+.launcher.top .notice { bottom: auto; top: calc(100% + 8px); }
+.grip span { width: 4px; height: 4px; border-radius: 50%; background: #9ca3af; }
 .btn { border: 0; cursor: pointer; border-radius: 999px; padding: 10px 16px; font-size: 14px; font-weight: 600;
   background: #4f46e5; color: #fff; box-shadow: 0 6px 20px rgba(79,70,229,.35); display: inline-flex; align-items: center; gap: 8px; }
 .btn:hover { background: #4338ca; }

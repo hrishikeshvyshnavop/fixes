@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { requireWidgetUser } from "@/lib/widget-auth";
 import { ApiError, handle, json, preflight, projectForKey } from "@/lib/widget-api";
 
 export const OPTIONS = preflight;
@@ -10,6 +11,7 @@ export function PATCH(req: Request, { params }: { params: Promise<{ id: string }
     const { id } = await params;
     const b = await req.json().catch(() => ({}));
     const project = await projectForKey(req, b.key);
+    await requireWidgetUser(req, project);
     if (b.status !== "open" && b.status !== "resolved") throw new ApiError(400, "Invalid status");
 
     const db = await getDb();

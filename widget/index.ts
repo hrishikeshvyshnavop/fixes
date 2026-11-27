@@ -23,6 +23,8 @@ type Comment = {
   replies: Reply[];
 };
 
+type Me = { id: string; name: string; email: string };
+
 type Draft = {
   selector: string;
   offsetX: number;
@@ -46,7 +48,14 @@ type Draft = {
     return;
   }
   const API = (script?.dataset.api ?? new URL(script!.src).origin).replace(/\/$/, "");
-  const NAME_KEY = "fb_widget_name";
+  const TOKEN_KEY = `fb_widget_token:${KEY}`;
+  const POS_KEY = "fb_widget_pos";
+  const EDGE = 8; // min gap between launcher and viewport edge
+
+  // Launcher position, anchored to the nearest horizontal/vertical edge so it grows
+  // toward the middle of the screen when the toolbar opens.
+  type Pos = { h: "left" | "right"; x: number; v: "top" | "bottom"; y: number };
+  const DEFAULT_POS: Pos = { h: "right", x: 20, v: "bottom", y: 20 };
 
   // ---------- state ----------
   let open = false; // pins + toolbar visible
@@ -56,6 +65,9 @@ type Draft = {
   let activeId: string | null = null;
   let draft: Draft | null = null;
   let lastUrl = location.href;
+  let me: Me | null = null; // signed-in, invited project member
+  let signingIn = false; // Google popup open, waiting for the hand-off
+  let notice = ""; // short message shown next to the launcher
 
   // ---------- DOM ----------
   const host = document.createElement("div");
@@ -86,20 +98,47 @@ type Draft = {
   const highlight = h("div", { className: "highlight" });
   highlight.style.display = "none";
 
-  const name = () => {
+  const getToken = () => {
     try {
-      return localStorage.getItem(NAME_KEY) ?? "";
+      return localStorage.getItem(TOKEN_KEY);
     } catch {
-      return "";
+      return null;
     }
   };
-  const setName = (n: string) => {
+  const setToken = (t: string | null) => {
     try {
-      localStorage.setItem(NAME_KEY, n);
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
     } catch {
       /* storage blocked */
     }
   };
+
+  const loadPos = (): Pos => {
+    try {
+      const p = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
+      if (
+        p &&
+        (p.h === "left" || p.h === "right") &&
+        (p.v === "top" || p.v === "bottom") &&
+        Number.isFinite(p.x) &&
+        Number.isFinite(p.y)
+      )
+        return p;
+    } catch {
+      /* storage blocked or bad JSON */
+    }
+    return { ...DEFAULT_POS };
+  };
+  const savePos = (p: Pos | null) => {
+    try {
+      if (p) localStorage.setItem(POS_KEY, JSON.stringify(p));
+      else localStorage.removeItem(POS_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  };
+  let pos = loadPos();
 
   const ago = (iso: string) => {
     const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -111,11 +150,18 @@ type Draft = {
 
   // ---------- API ----------
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
+    const token = getToken();
     const res = await fetch(API + path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {}),
+      },
     });
     const data = await res.json().catch(() => ({}));
+    // Session expired or the person was removed from the project.
+    if (res.status === 401) signedOut("Your session ended. Sign in again to comment.");
     if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status });
     return data as T;
   }
@@ -123,7 +169,9 @@ type Draft = {
   async function load() {
     try {
       const q = new URLSearchParams({ key: KEY!, url: location.href });
-      const data = await api<{ comments: Comment[] }>(`/api/widget/comments?${q}`);
+      const data = await api<{ comments: Comment[]; user: Me | null }>(`/api/widget/comments?${q}`);
+      if (!data.user && getToken()) return signedOut("Your session ended. Sign in again to comment.");
+      me = data.user;
       comments = data.comments;
       render();
     } catch (e) {
@@ -153,6 +201,86 @@ type Draft = {
     root.append(note);
   }
 
+  // ---------- sign-in (Google, invited members only) ----------
+  // The popup runs on the Fixes domain, signs in with Google and checks the invite. The widget
+  // polls for the result with a one-time nonce instead of relying on window.opener, which
+  // Google's sign-in pages can cut off.
+  function signedOut(message = "") {
+    setToken(null);
+    me = null;
+    comments = [];
+    open = picking = false;
+    draft = null;
+    activeId = null;
+    notice = message;
+    render();
+  }
+
+  let pollTimer = 0;
+  function stopSignIn() {
+    clearTimeout(pollTimer);
+    signingIn = false;
+  }
+
+  function signIn() {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const nonce = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const q = new URLSearchParams({ key: KEY!, origin: location.origin, nonce });
+    const w = 480;
+    const hgt = 640;
+    const popup = window.open(
+      `${API}/widget/auth?${q}`,
+      "fixes-sign-in",
+      `width=${w},height=${hgt},left=${Math.round(screenX + (outerWidth - w) / 2)},top=${Math.round(screenY + (outerHeight - hgt) / 2)}`,
+    );
+    if (!popup) {
+      notice = "Allow pop-ups for this site to sign in.";
+      return render();
+    }
+    stopSignIn();
+    signingIn = true;
+    notice = "";
+    render();
+
+    const deadline = Date.now() + 10 * 60_000;
+    const poll = async () => {
+      if (!signingIn) return;
+      try {
+        const res = await api<{ token: string | null; user?: Me }>("/api/widget/session", {
+          method: "POST",
+          body: JSON.stringify({ key: KEY, nonce }),
+        });
+        if (!signingIn) return;
+        if (res.token && res.user) {
+          stopSignIn();
+          setToken(res.token);
+          me = res.user;
+          open = picking = true;
+          await load();
+          return render();
+        }
+      } catch (e) {
+        console.warn("[feedback] sign-in check failed", e);
+      }
+      if (Date.now() > deadline) {
+        stopSignIn();
+        notice = "Sign-in timed out. Try again.";
+        return render();
+      }
+      pollTimer = window.setTimeout(poll, 1500);
+    };
+    pollTimer = window.setTimeout(poll, 1500);
+  }
+
+  async function signOut() {
+    try {
+      await api("/api/widget/session", { method: "DELETE" });
+    } catch {
+      /* token already gone */
+    }
+    signedOut();
+  }
+
   // ---------- positioning ----------
   function pinPoint(c: { selector: string; offsetX: number; offsetY: number; pageX: number; pageY: number }) {
     let el: Element | null = null;
@@ -173,6 +301,80 @@ type Draft = {
     const left = x + 24 + W > innerWidth ? Math.max(8, x - W - 16) : x + 24;
     card.style.left = `${left}px`;
     card.style.top = `${Math.max(8, Math.min(y - 20, innerHeight - 260))}px`;
+  }
+
+  // ---------- movable launcher ----------
+  let launcherEl: HTMLElement | null = null;
+  let drag: { sx: number; sy: number; left: number; top: number; w: number; h: number; moved: boolean } | null = null;
+  let suppressClick = false;
+
+  const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), Math.max(min, max));
+
+  function placeLauncher() {
+    const el = launcherEl;
+    if (!el) return;
+    // Keep the button order fixed mid-drag; flip it once the drop settles the anchor side.
+    if (!drag?.moved) el.classList.toggle("left", pos.h === "left");
+    el.classList.toggle("top", pos.v === "top");
+    const r = el.getBoundingClientRect();
+    const x = clamp(pos.x, EDGE, innerWidth - r.width - EDGE);
+    const y = clamp(pos.y, EDGE, innerHeight - r.height - EDGE);
+    el.style.left = el.style.right = el.style.top = el.style.bottom = "";
+    el.style[pos.h] = `${x}px`;
+    el.style[pos.v] = `${y}px`;
+  }
+
+  // Convert an absolute top-left into a position anchored to the closest edges.
+  function toPos(left: number, top: number, w: number, hgt: number): Pos {
+    const leftSide = left + w / 2 < innerWidth / 2;
+    const topSide = top + hgt / 2 < innerHeight / 2;
+    return {
+      h: leftSide ? "left" : "right",
+      x: Math.round(leftSide ? left : innerWidth - left - w),
+      v: topSide ? "top" : "bottom",
+      y: Math.round(topSide ? top : innerHeight - top - hgt),
+    };
+  }
+
+  function onDragStart(e: PointerEvent) {
+    if (e.button !== 0 || !launcherEl) return;
+    const r = launcherEl.getBoundingClientRect();
+    drag = { sx: e.clientX, sy: e.clientY, left: r.left, top: r.top, w: r.width, h: r.height, moved: false };
+  }
+
+  function onDragMove(e: PointerEvent) {
+    if (!drag || !launcherEl) return;
+    const dx = e.clientX - drag.sx;
+    const dy = e.clientY - drag.sy;
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < 5) return; // small jitter is still a click
+      drag.moved = true;
+      launcherEl.classList.add("dragging");
+    }
+    e.preventDefault();
+    const left = clamp(drag.left + dx, EDGE, innerWidth - drag.w - EDGE);
+    const top = clamp(drag.top + dy, EDGE, innerHeight - drag.h - EDGE);
+    pos = toPos(left, top, drag.w, drag.h);
+    placeLauncher();
+  }
+
+  function onDragEnd() {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    if (!moved) return;
+    launcherEl?.classList.remove("dragging");
+    savePos(pos);
+    placeLauncher();
+    // The click that follows a drag shouldn't toggle the button underneath.
+    suppressClick = true;
+    setTimeout(() => (suppressClick = false), 0);
+  }
+
+  function resetPos() {
+    pos = { ...DEFAULT_POS };
+    savePos(null);
+    placeLauncher();
   }
 
   // ---------- screenshot ----------
@@ -284,22 +486,17 @@ type Draft = {
 
   // ---------- views ----------
   function composer(d: Draft) {
-    const needsName = !name();
-    const nameInput = h("input", { type: "text", placeholder: "Your name", value: name() });
     const text = h("textarea", { placeholder: "Leave a comment…" });
     const shotBox = h("input", { type: "checkbox", checked: true });
     const err = h("div", { className: "err" });
     const submit = h("button", { className: "btn small" }, "Post");
 
     const send = async () => {
-      const authorName = (nameInput.value || name()).trim();
       const body = text.value.trim();
-      if (!authorName) return void (err.textContent = "Please enter your name");
       if (!body) return void (err.textContent = "Comment can't be empty");
       submit.disabled = true;
       submit.textContent = "Posting…";
       try {
-        setName(authorName);
         const screenshot = shotBox.checked ? await d.screenshot : null;
         const { comment } = await api<{ comment: Comment }>("/api/widget/comments", {
           method: "POST",
@@ -312,7 +509,6 @@ type Draft = {
             pageX: d.pageX,
             pageY: d.pageY,
             body,
-            authorName,
             screenshot,
             meta: {
               viewport: { w: innerWidth, h: innerHeight },
@@ -342,7 +538,6 @@ type Draft = {
       { className: "card" },
       h("h4", {}, "New comment", h("button", { className: "close", title: "Cancel", onclick: () => ((draft = null), render()) }, "×")),
       text,
-      needsName && h("div", { className: "field" }, nameInput),
       err,
       h("div", { className: "row" }, h("label", { className: "check" }, shotBox, "Attach screenshot"), submit),
     );
@@ -353,7 +548,6 @@ type Draft = {
   function thread(c: Comment) {
     const text = h("textarea", { placeholder: "Reply…" });
     text.style.minHeight = "52px";
-    const nameInput = h("input", { type: "text", placeholder: "Your name", value: name() });
     const err = h("div", { className: "err" });
     const replyBtn = h("button", { className: "btn small" }, "Reply");
     const toggle = h(
@@ -363,16 +557,13 @@ type Draft = {
     );
 
     replyBtn.addEventListener("click", async () => {
-      const authorName = (nameInput.value || name()).trim();
       const body = text.value.trim();
-      if (!authorName) return void (err.textContent = "Please enter your name");
       if (!body) return;
       replyBtn.disabled = true;
       try {
-        setName(authorName);
         const { reply } = await api<{ reply: Reply }>(`/api/widget/comments/${c.id}/replies`, {
           method: "POST",
-          body: JSON.stringify({ key: KEY, body, authorName }),
+          body: JSON.stringify({ key: KEY, body }),
         });
         c.replies.push(reply);
         render();
@@ -419,7 +610,6 @@ type Draft = {
       msg(c),
       ...c.replies.map(msg),
       h("div", { className: "field" }, text),
-      !name() && h("div", { className: "field" }, nameInput),
       err,
       h("div", { className: "row" }, toggle, replyBtn),
     );
@@ -479,8 +669,29 @@ type Draft = {
     }
 
     const launcher = h("div", { className: "launcher" });
-    if (open) {
+    launcher.addEventListener("pointerdown", onDragStart);
+    launcher.addEventListener(
+      "click",
+      (e) => {
+        if (!suppressClick) return;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true,
+    );
+    launcherEl = launcher;
+    if (open && me) {
       launcher.append(
+        h(
+          "button",
+          {
+            className: "btn ghost",
+            title: `Signed in as ${me.name} (${me.email}). Click to sign out.`,
+            onclick: signOut,
+          },
+          h("span", { className: "avatar" }, (me.name.trim()[0] ?? "?").toUpperCase()),
+          "Sign out",
+        ),
         h(
           "button",
           {
@@ -510,7 +721,14 @@ type Draft = {
         "button",
         {
           className: "btn",
+          title: me ? undefined : "Sign in with Google to leave feedback",
           onclick: () => {
+            notice = "";
+            if (signingIn) {
+              stopSignIn();
+              return render();
+            }
+            if (!me) return signIn();
             open = !open;
             picking = open;
             draft = null;
@@ -520,16 +738,33 @@ type Draft = {
             render();
           },
         },
-        open ? "Close" : "Feedback",
+        signingIn ? "Signing in… (cancel)" : open ? "Close" : "Feedback",
         !open && openCount > 0 && h("span", { className: "badge" }, String(openCount)),
       ),
+      h(
+        "div",
+        {
+          className: "grip",
+          title: "Drag to move · double-click to reset",
+          "aria-hidden": "true",
+          ondblclick: resetPos,
+        },
+        h("span", {}),
+        h("span", {}),
+        h("span", {}),
+        h("span", {}),
+        h("span", {}),
+        h("span", {}),
+      ),
     );
+    if (notice) launcher.append(h("div", { className: "notice", role: "status" }, notice));
     root.append(launcher);
     document.documentElement.style.cursor = picking && !draft ? "crosshair" : "";
     reposition();
   }
 
   function reposition() {
+    placeLauncher();
     for (const { el, c } of pinEls) {
       const p = pinPoint(c);
       el.style.left = `${p.x}px`;
@@ -557,6 +792,9 @@ type Draft = {
   document.addEventListener("mousedown", swallow, true);
   document.addEventListener("mouseup", swallow, true);
   document.addEventListener("keydown", onKey, true);
+  addEventListener("pointermove", onDragMove, { passive: false });
+  addEventListener("pointerup", onDragEnd);
+  addEventListener("pointercancel", onDragEnd);
   addEventListener("scroll", schedule, { passive: true, capture: true });
   addEventListener("resize", schedule);
 

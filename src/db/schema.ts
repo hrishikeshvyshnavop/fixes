@@ -53,6 +53,8 @@ export const comments = pgTable(
     pageY: real("page_y").notNull(),
     body: text("body").notNull(),
     authorName: text("author_name").notNull(),
+    // Signed-in widget user who wrote it (null for comments from before widget sign-in).
+    authorId: text("author_id"),
     status: text("status", { enum: ["open", "resolved"] }).notNull().default("open"),
     screenshot: text("screenshot"), // JPEG data URL (MVP: stored inline)
     meta: jsonb("meta").$type<CommentMeta>().notNull().default({}),
@@ -70,6 +72,7 @@ export const replies = pgTable(
       .references(() => comments.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
     authorName: text("author_name").notNull(),
+    authorId: text("author_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("replies_comment_idx").on(t.commentId)],
@@ -131,6 +134,28 @@ export const apiTokens = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("api_tokens_user_idx").on(t.userId)],
+);
+
+// Widget sign-in. The Google sign-in popup creates a pending row keyed by a one-time nonce the
+// widget generated; the widget then claims it, which swaps the nonce for a bearer token.
+// Only sha256 hashes are stored. Rows are bound to one project and the site origin that asked.
+export const widgetSessions = pgTable(
+  "widget_sessions",
+  {
+    id: text("id").primaryKey(),
+    nonceHash: text("nonce_hash").unique(),
+    tokenHash: text("token_hash").unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    origin: text("origin").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("widget_sessions_user_idx").on(t.userId)],
 );
 
 export type User = typeof users.$inferSelect;

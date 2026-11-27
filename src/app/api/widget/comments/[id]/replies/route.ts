@@ -1,16 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb, schema } from "@/db";
+import { requireWidgetUser } from "@/lib/widget-auth";
 import { ApiError, handle, json, preflight, projectForKey, str } from "@/lib/widget-api";
 
 export const OPTIONS = preflight;
 
-// POST /api/widget/comments/:id/replies  { key, body, authorName }
+// POST /api/widget/comments/:id/replies  { key, body }  (Authorization: Bearer <widget token>)
 export function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   return handle(req, async () => {
     const { id } = await params;
     const b = await req.json().catch(() => ({}));
     const project = await projectForKey(req, b.key);
+    const user = await requireWidgetUser(req, project);
 
     const db = await getDb();
     const [parent] = await db
@@ -26,7 +28,8 @@ export function POST(req: Request, { params }: { params: Promise<{ id: string }>
         id: nanoid(12),
         commentId: id,
         body: str(b.body, "body", 5000),
-        authorName: str(b.authorName, "authorName", 100),
+        authorName: user.name,
+        authorId: user.id,
       })
       .returning();
     return json(req, { reply }, 201);

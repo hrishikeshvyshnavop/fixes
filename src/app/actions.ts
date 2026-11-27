@@ -115,7 +115,7 @@ export async function addReply(fd: FormData) {
     .from(schema.comments)
     .where(and(eq(schema.comments.id, commentId), eq(schema.comments.projectId, projectId)));
   if (!parent) return;
-  await db.insert(schema.replies).values({ id: nanoid(12), commentId, body: body.slice(0, 5000), authorName: user.name });
+  await db.insert(schema.replies).values({ id: nanoid(12), commentId, body: body.slice(0, 5000), authorName: user.name, authorId: user.id });
   refresh();
 }
 

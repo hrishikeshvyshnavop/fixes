@@ -8,8 +8,8 @@ import { originAllowed, parseOrigins } from "./origins";
 export function corsHeaders(origin: string | null): HeadersInit {
   return {
     "Access-Control-Allow-Origin": origin ?? "*",
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     // Chrome's Private Network Access: lets public sites call a Fixes server on localhost/LAN during testing.
     "Access-Control-Allow-Private-Network": "true",

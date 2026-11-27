@@ -315,7 +315,7 @@ const TOOLS: Tool[] = [
       if (!body) throw new ToolError("Reply body is empty.");
       const { comment: c, project } = await findComment(user, args.id);
       const db = await getDb();
-      await db.insert(replies).values({ id: nanoid(12), commentId: c.id, body, authorName: user.name });
+      await db.insert(replies).values({ id: nanoid(12), commentId: c.id, body, authorName: user.name, authorId: user.id });
       revalidatePath("/", "layout");
       return text({ ok: true, key: label(project.prefix, c.number), replied: body });
     },
@@ -363,7 +363,7 @@ async function setStatus(args: Record<string, unknown>, user: User, status: "ope
   const db = await getDb();
   await db.update(comments).set({ status }).where(eq(comments.id, c.id));
   const note = str(args.note);
-  if (note) await db.insert(replies).values({ id: nanoid(12), commentId: c.id, body: note, authorName: user.name });
+  if (note) await db.insert(replies).values({ id: nanoid(12), commentId: c.id, body: note, authorName: user.name, authorId: user.id });
   revalidatePath("/", "layout");
   return text({ ok: true, key: label(project.prefix, c.number), status, previousStatus: c.status, note: note || undefined });
 }
