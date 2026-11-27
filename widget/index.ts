@@ -50,7 +50,8 @@ type Details = { label: string; size: string; text: string };
 type Draft = Anchor & {
   details: Details;
   quote?: string;
-  screenshot: Promise<string | null>;
+  screenshot?: Promise<string | null>; // started on send (or when details open), never while typing
+  shotAt: { x: number; y: number; w: number; h: number; sx: number; sy: number }; // area + scroll at click time
   shot?: string | null; // resolved screenshot, for the preview
   noShot?: boolean; // user turned the screenshot off
   showDetails?: boolean; // element details expanded in the composer
@@ -142,6 +143,11 @@ const THREAD_PARAM = "fixes_thread";
 
   // ---------- DOM ----------
   const host = document.createElement("div");
+  for (const type of ["keydown", "keyup", "keypress"])
+    host.addEventListener(type, (e) => {
+      const t = e.composedPath()[0];
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
+    });
   host.setAttribute("data-feedback-widget", "");
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
@@ -720,16 +726,8 @@ const THREAD_PARAM = "fixes_thread";
       pageY: y + scrollY,
       details: describe(el),
       quote,
-      screenshot: new Promise<string | null>((resolve) =>
-        requestAnimationFrame(() =>
-          setTimeout(() => capture({ x: rect.left, y: rect.top, w: rect.width, h: rect.height }).then(resolve, () => resolve(null)), 50),
-        ),
-      ),
+      shotAt: { x: rect.left, y: rect.top, w: rect.width, h: rect.height, sx: scrollX, sy: scrollY },
     };
-    d.screenshot.then((s) => {
-      d.shot = s;
-      if (draft === d) render();
-    });
     draft = d;
     activeId = null;
     editing = reactFor = null;
@@ -737,6 +735,22 @@ const THREAD_PARAM = "fixes_thread";
     errors.new = "";
     highlight.style.display = hlLabel.style.display = "none";
     render();
+  }
+
+  /**
+   * Screenshots copy the whole page and block the main thread for a moment, so they're taken when
+   * the comment is sent (or the details preview is opened), never while someone is typing.
+   */
+  function ensureShot(d: Draft): Promise<string | null> {
+    if (!d.screenshot) {
+      const a = d.shotAt;
+      d.screenshot = capture({ x: a.x + (a.sx - scrollX), y: a.y + (a.sy - scrollY), w: a.w, h: a.h });
+      d.screenshot.then((shot) => {
+        d.shot = shot;
+        if (draft === d && d.showDetails) render();
+      });
+    }
+    return d.screenshot;
   }
 
   function onClick(e: MouseEvent) {
@@ -910,7 +924,7 @@ const THREAD_PARAM = "fixes_thread";
     run("new", async () => {
       const body = (texts.new ?? "").trim();
       if (!body) return;
-      const screenshot = d.noShot ? null : await d.screenshot;
+      const screenshot = d.noShot ? null : await ensureShot(d);
       const { comment } = await api<{ comment: Thread }>("/api/widget/comments", {
         method: "POST",
         body: JSON.stringify({
@@ -1155,7 +1169,9 @@ const THREAD_PARAM = "fixes_thread";
       ),
       d.noShot
         ? h("div", { className: "shot-wait" }, "Screenshot won't be attached")
-        : d.shot === undefined
+        : !d.screenshot
+          ? h("div", { className: "shot-wait" }, "A screenshot of this spot is attached when you send")
+          : d.shot === undefined
           ? h("div", { className: "shot-wait" }, "Capturing screenshot…")
           : d.shot
             ? h("img", { className: "shot", src: d.shot, alt: "Screenshot that will be attached" })
@@ -1198,7 +1214,16 @@ const THREAD_PARAM = "fixes_thread";
           d.noShot ? "off" : "on",
         ),
         h("span", { className: "c-sep" }),
-        iconBtn("info", d.showDetails ? "Hide details" : "Element & screenshot details", () => ((d.showDetails = !d.showDetails), render()), d.showDetails ? "on" : ""),
+        iconBtn(
+          "info",
+          d.showDetails ? "Hide details" : "Element & screenshot details",
+          () => {
+            d.showDetails = !d.showDetails;
+            if (d.showDetails && !d.noShot) ensureShot(d);
+            render();
+          },
+          d.showDetails ? "on" : "",
+        ),
         h("span", { className: "c-status mono" }, busy.new ? "Posting…" : d.details.label),
         send,
       ),
@@ -1997,7 +2022,11 @@ const THREAD_PARAM = "fixes_thread";
     schedule();
   }, 1000);
   // Pull new comments; text being typed is preserved across re-renders.
-  setInterval(() => me && !document.hidden && !busy.new && load(), 20000);
+  const typing = () => {
+    const a = shadow.activeElement as HTMLTextAreaElement | HTMLInputElement | null;
+    return !!a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && !!a.value;
+  };
+  setInterval(() => me && !document.hidden && !busy.new && !typing() && load(), 20000);
 
   load();
 })();
