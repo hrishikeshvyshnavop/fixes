@@ -3,25 +3,41 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "widget:build": "esbuild widget/index.ts --bundle --minify --format=iife --target=es2019 --outfile=public/widget.js",
+    "widget:watch": "esbuild widget/index.ts --bundle --format=iife --target=es2019 --sourcemap --outfile=public/widget.js --watch",
+    "dev": "npm run widget:build && next dev",
+    "build": "npm run widget:build && next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.3.8",
+    "@neon/auth": "^0.8.2",
+    "@neon/config": "^1.14.8",
+    "@neon/env": "^2.1.11",
+    "drizzle-orm": "^0.44.5",
+    "lucide-react": "^0.544.0",
+    "nanoid": "^5.1.5",
+    "next": "^16.4.6",
+    "pg": "^8.16.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.4"
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "drizzle-kit": "^0.31.4",
+    "esbuild": "^0.25.10",
     "eslint": "^9",
-    "eslint-config-next": "15.5.4",
-    "@eslint/eslintrc": "^3"
+    "eslint-config-next": "^16.4.6",
+    "html-to-image": "^1.11.13",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.6",
+    "typescript": "^5"
   }
 }
