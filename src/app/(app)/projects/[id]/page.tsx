@@ -32,7 +32,7 @@ export default async function ProjectFeedback({
   const { project, role, user } = await getAccess(id);
   const invitable = role === "owner" ? await ownedProjects(user.id) : [];
 
-  const all = await listComments({ projectId: id });
+  const all = await listComments({ projectId: id, viewerId: user.id });
   const onPage = sp.page ? all.filter((c) => c.pageUrl === sp.page) : all;
   const pages = [...new Set(all.map((c) => c.pageUrl))].sort();
   const counts = {

@@ -181,7 +181,11 @@ export function InviteForm({ projectId }: { projectId: string }) {
       {state?.error && <p className="mt-2 text-[13px] text-destructive">{state.error}</p>}
       {state?.link && (
         <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
-          <p className="text-[13px] font-medium">{state.ok}. Send them this link:</p>
+          <p className="text-[13px] font-medium">
+            {state.emailed
+              ? `${state.ok}. They'll also see it in their notifications. Backup link:`
+              : `${state.ok}, but it wasn't emailed (${state.emailError ?? "email isn't set up"}). Send them this link:`}
+          </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded border border-border bg-background px-2 py-1.5 font-mono text-xs select-all">
               {state.link}

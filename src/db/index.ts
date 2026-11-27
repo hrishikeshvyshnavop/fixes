@@ -134,6 +134,36 @@ CREATE TABLE IF NOT EXISTS widget_sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS widget_sessions_user_idx ON widget_sessions(user_id);
+
+-- Widget threads: edits and emoji reactions.
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+ALTER TABLE replies ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+CREATE TABLE IF NOT EXISTS reactions (
+  comment_id text NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  target_id text NOT NULL, -- the comment or reply reacted to
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (target_id, user_id, emoji)
+);
+CREATE INDEX IF NOT EXISTS reactions_comment_idx ON reactions(comment_id);
+
+-- Dashboard read state: when each user last opened each feedback item.
+CREATE TABLE IF NOT EXISTS comment_views (
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  comment_id text NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  seen_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, comment_id)
+);
+
+-- Profile photos.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text;
+CREATE TABLE IF NOT EXISTS user_avatars (
+  user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  mime text NOT NULL,
+  data text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 type DB = PgDatabase<PgQueryResultHKT, typeof schema>;

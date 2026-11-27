@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb, schema } from "@/db";
-import type { Project, User } from "@/db/schema";
+import type { Project, Role, User } from "@/db/schema";
 import { newToken, sha256 } from "@/lib/auth";
 import { auth } from "@/lib/neon-auth";
 import { ApiError } from "@/lib/widget-api";
@@ -10,7 +10,7 @@ import { ApiError } from "@/lib/widget-api";
 const PENDING_MS = 10 * 60_000; // popup → widget hand-off window
 const SESSION_MS = 30 * 24 * 3600_000; // how long a widget stays signed in
 
-export type WidgetUser = Pick<User, "id" | "name" | "email">;
+export type WidgetUser = Pick<User, "id" | "name" | "email" | "avatarUrl"> & { role: Role };
 
 /** Does the current Neon Auth session have a Google account linked? */
 export async function hasGoogleAccount(): Promise<boolean> {
@@ -95,9 +95,11 @@ export async function claimSession(req: Request, project: Project, nonce: string
     .returning({ userId: schema.widgetSessions.userId });
   if (!row) return null;
   const [user] = await db
-    .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
+    .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email, avatarUrl: schema.users.avatarUrl, role: schema.projectMembers.role })
     .from(schema.users)
+    .innerJoin(schema.projectMembers, and(eq(schema.projectMembers.userId, schema.users.id), eq(schema.projectMembers.projectId, project.id)))
     .where(eq(schema.users.id, row.userId));
+  if (!user) return null;
   return { token, user };
 }
 
@@ -115,7 +117,7 @@ export async function widgetUser(req: Request, project: Project): Promise<Widget
   if (!token) return null;
   const db = await getDb();
   const [row] = await db
-    .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
+    .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email, avatarUrl: schema.users.avatarUrl, role: schema.projectMembers.role })
     .from(schema.widgetSessions)
     .innerJoin(schema.users, eq(schema.users.id, schema.widgetSessions.userId))
     .innerJoin(

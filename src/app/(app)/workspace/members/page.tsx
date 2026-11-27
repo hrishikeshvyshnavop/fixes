@@ -3,7 +3,8 @@ import { UserPlus, Users } from "lucide-react";
 import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { memberProjectIds, requireUser } from "@/lib/auth";
-import { hue, initials } from "@/lib/ui";
+import { hue } from "@/lib/ui";
+import { Avatar } from "@/components/feedback";
 import { PageShell } from "@/components/page-shell";
 import { InviteButton } from "@/components/invite-dialog";
 import { button } from "@/components/styles";
@@ -21,6 +22,7 @@ export default async function WorkspaceMembers() {
           userId: schema.users.id,
           name: schema.users.name,
           email: schema.users.email,
+          avatarUrl: schema.users.avatarUrl,
           role: schema.projectMembers.role,
           projectId: schema.projects.id,
           projectName: schema.projects.name,
@@ -34,9 +36,9 @@ export default async function WorkspaceMembers() {
         .orderBy(asc(schema.users.name), asc(schema.projects.name))
     : [];
 
-  const people = new Map<string, { name: string; email: string; projects: typeof rows }>();
+  const people = new Map<string, { name: string; email: string; avatarUrl: string | null; projects: typeof rows }>();
   for (const r of rows) {
-    const p = people.get(r.userId) ?? { name: r.name, email: r.email, projects: [] };
+    const p = people.get(r.userId) ?? { name: r.name, email: r.email, avatarUrl: r.avatarUrl, projects: [] };
     p.projects.push(r);
     people.set(r.userId, p);
   }
@@ -58,9 +60,7 @@ export default async function WorkspaceMembers() {
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
         {[...people.entries()].map(([id, p]) => (
           <li key={id} className="flex items-start gap-3 px-5 py-3.5">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border">
-              {initials(p.name)}
-            </span>
+            <Avatar name={p.name} src={p.avatarUrl} size={32} />
             <div className="min-w-0 flex-1">
               <div className="text-[13px] font-medium">
                 {p.name}

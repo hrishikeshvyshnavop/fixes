@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { CreditCard, Gauge, Plug, Settings, UserPlus, Users } from "lucide-react";
+import { CircleUser, CreditCard, Gauge, Plug, UserPlus, Users } from "lucide-react";
 import { InviteButton, type InvitableProject } from "./invite-dialog";
 import { PROJECT_TYPES, TYPE_META, type ProjectType } from "@/lib/project-types";
 import { useState } from "react";
@@ -185,8 +185,8 @@ export function SidebarNav({
         <Item href="/workspace/billing" icon={<CreditCard size={16} strokeWidth={1.75} />}>
           Billing
         </Item>
-        <Item href="/workspace/settings" icon={<Settings size={16} strokeWidth={1.75} />}>
-          Settings
+        <Item href="/workspace/settings" icon={<CircleUser size={16} strokeWidth={1.75} />}>
+          Profile
         </Item>
       </Section>
     </nav>

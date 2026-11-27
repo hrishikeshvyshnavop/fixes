@@ -3,11 +3,14 @@ import { asc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { User } from "@/db/schema";
 import { logout } from "@/app/auth-actions";
-import { hue, initials } from "@/lib/ui";
+import { hue } from "@/lib/ui";
+import { Avatar } from "./feedback";
 import { PROJECT_TYPES, type ProjectType } from "@/lib/project-types";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { InstallWidgetLink, NewProjectButton, SidebarNav } from "./sidebar-nav";
-import { ownedProjects } from "@/lib/queries";
+import { ownedProjects, pendingInvitesFor } from "@/lib/queries";
+import { emailVerified } from "@/lib/auth";
+import { Notifications } from "./notifications";
 
 async function loadProjects(userId: string) {
   const db = await getDb();
@@ -38,7 +41,19 @@ function Logo() {
 }
 
 export async function Sidebar({ user }: { user: User }) {
-  const [rows, invitable] = await Promise.all([loadProjects(user.id), ownedProjects(user.id)]);
+  const [rows, invitable, pending, verified] = await Promise.all([
+    loadProjects(user.id),
+    ownedProjects(user.id),
+    pendingInvitesFor(user.email),
+    emailVerified(),
+  ]);
+  const invites = pending.map((i) => ({
+    id: i.id,
+    role: i.role,
+    createdAt: i.createdAt.toISOString(),
+    inviter: i.inviter,
+    project: { ...i.project, hue: hue(i.project.id) },
+  }));
   const projects = rows.map((p) => ({ ...p, hue: hue(p.id) }));
   const totalOpen = rows.reduce((n, p) => n + p.open, 0);
   const typeCounts = Object.fromEntries(PROJECT_TYPES.map((t) => [t, rows.filter((r) => r.type === t).length])) as Record<ProjectType, number>;
@@ -50,7 +65,10 @@ export async function Sidebar({ user }: { user: User }) {
           <Logo />
           Fixes
         </Link>
-        <NewProjectButton />
+        <div className="flex items-center gap-1.5">
+          <Notifications invites={invites} verified={verified} email={user.email} />
+          <NewProjectButton />
+        </div>
       </div>
 
       <SidebarNav projects={projects} totalOpen={totalOpen} typeCounts={typeCounts} invitable={invitable} />
@@ -58,12 +76,9 @@ export async function Sidebar({ user }: { user: User }) {
       <div className="space-y-2 border-t border-sidebar-border px-3 pt-3 pb-3">
         <InstallWidgetLink projectIds={projects.map((p) => p.id)} />
         <div className="flex items-center gap-2 px-1">
-          <span
-            title={user.email}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[10px] font-semibold text-sidebar-accent-foreground"
-          >
-            {initials(user.name)}
-          </span>
+          <Link href="/workspace/settings" title="Profile & settings" className="shrink-0 rounded-full">
+            <Avatar name={user.name} src={user.avatarUrl} size={24} />
+          </Link>
           <div className="min-w-0 flex-1 leading-tight">
             <div className="truncate text-[13px] font-medium">{user.name}</div>
             <div className="truncate text-[11px] text-muted-foreground">{user.email}</div>

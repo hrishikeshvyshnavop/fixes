@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { setStatus } from "@/app/actions";
+import { CopyRowLink } from "./feedback-links";
 import type { CommentWithReplies } from "@/lib/queries";
 import { initials, pathOf, shortDate } from "@/lib/ui";
 import {
@@ -120,7 +121,21 @@ export function PageFilter({
 
 // ---------- list ----------
 
-export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
+export function Avatar({ name, src, size = 20 }: { name: string; src?: string | null; size?: number }) {
+  if (src)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- small avatar from our API or Google; no optimisation needed
+      <img
+        src={src}
+        alt=""
+        title={name}
+        width={size}
+        height={size}
+        referrerPolicy="no-referrer"
+        className="inline-block shrink-0 rounded-full bg-muted object-cover ring-1 ring-border"
+        style={{ width: size, height: size }}
+      />
+    );
   return (
     <span
       title={name}
@@ -206,16 +221,29 @@ export function FeedbackGroups({
 }
 
 function Row({ c, prefix, project }: { c: CommentWithReplies; prefix: string; project?: string }) {
-  const href = `/projects/${c.projectId}/feedback/${c.id}`;
+  const href = `/projects/${c.projectId}/feedback/${prefix}-${c.number}`;
   return (
     <li className="group relative flex h-11 items-center gap-3 border-b border-border/60 px-4 text-[13px] hover:bg-accent/50">
       {/* Stretched link: the whole row navigates, while the status toggle stays clickable above it. */}
-      <Link href={href} className="absolute inset-0" aria-label={`${prefix}-${c.number}: ${c.body.slice(0, 60)}`} />
+      <Link
+        href={href}
+        className="absolute inset-0"
+        aria-label={`${c.isNew ? "New: " : ""}${prefix}-${c.number}: ${c.body.slice(0, 60)}`}
+      />
+      {/* New = activity from someone else you haven't opened yet. */}
+      <span
+        className={`-mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${c.isNew ? "bg-blue-500" : "bg-transparent"}`}
+        title={c.isNew ? "New since you last opened it" : undefined}
+      />
       <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
         {prefix}-{c.number}
       </span>
       <StatusToggle c={c} />
-      <span className={`min-w-0 flex-1 truncate font-medium ${c.status === "resolved" ? "text-muted-foreground" : ""}`}>
+      <span
+        className={`min-w-0 flex-1 truncate ${
+          c.status === "resolved" ? "text-muted-foreground" : c.isNew ? "font-semibold text-foreground" : "font-normal text-foreground/80"
+        }`}
+      >
         {c.body}
       </span>
       <span className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
@@ -231,8 +259,9 @@ function Row({ c, prefix, project }: { c: CommentWithReplies; prefix: string; pr
         )}
         {c.hasScreenshot && <ImageIcon size={13} aria-label="Has screenshot" />}
       </span>
+      <CopyRowLink path={href} id={`${prefix}-${c.number}`} />
       <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">{shortDate(c.createdAt)}</span>
-      <Avatar name={c.authorName} />
+      <Avatar name={c.authorName} src={c.authorAvatarUrl} />
     </li>
   );
 }

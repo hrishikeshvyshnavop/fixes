@@ -1,23 +1,26 @@
-import { Settings } from "lucide-react";
+import { CircleUser } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { PageShell } from "@/components/page-shell";
 import { AccountForm } from "@/components/account-form";
+import { AvatarUpload } from "@/components/avatar-upload";
+import { isUploadedAvatar } from "@/lib/auth";
 
 export default async function WorkspaceSettings() {
   const user = await requireUser();
   return (
-    <PageShell icon={<Settings size={15} />} section="Workspace" title="Settings">
+    <PageShell icon={<CircleUser size={15} />} section="Workspace" title="Profile">
       <div>
-        <h2 className="text-xl font-semibold tracking-tight">Settings</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Your account and preferences. Project settings live on each project.</p>
+        <h2 className="text-xl font-semibold tracking-tight">Profile</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Your photo, name and sign-in. Each project has its own Settings under the project in the sidebar.</p>
       </div>
 
       <section className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold">Account</h2>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">Your name is shown on replies and in member lists.</p>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">Your name and photo are shown on feedback, replies and member lists.</p>
         </div>
-        <div className="px-5 py-4">
+        <div className="space-y-5 px-5 py-4">
+          <AvatarUpload name={user.name} src={user.avatarUrl} uploaded={isUploadedAvatar(user.avatarUrl)} />
           <AccountForm name={user.name} email={user.email} />
         </div>
       </section>

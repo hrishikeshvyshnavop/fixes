@@ -14,7 +14,11 @@ export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex"
 
 // ---------- sessions (Neon Auth) ----------
 
-type AuthUser = { id: string; email: string; name?: string | null; emailVerified?: boolean };
+type AuthUser = { id: string; email: string; name?: string | null; emailVerified?: boolean; image?: string | null };
+
+/** Uploaded photos win; otherwise use the sign-in provider's photo (e.g. Google). */
+export const isUploadedAvatar = (url: string | null | undefined) => !!url?.startsWith("/api/avatars/");
+const providerImage = (au: AuthUser) => (au.image && /^https:\/\//.test(au.image) ? au.image.slice(0, 1000) : null);
 
 /**
  * Mirror a Neon Auth user into the app's `users` table (same id), which project membership,
@@ -25,8 +29,12 @@ export async function syncUser(au: AuthUser): Promise<User> {
   const email = au.email.toLowerCase();
   const [existing] = await db.select().from(schema.users).where(eq(schema.users.id, au.id));
   if (existing) {
-    if (existing.email === email) return existing;
-    const [updated] = await db.update(schema.users).set({ email }).where(eq(schema.users.id, au.id)).returning();
+    const changes: Partial<User> = {};
+    if (existing.email !== email) changes.email = email;
+    const image = providerImage(au);
+    if (image && !isUploadedAvatar(existing.avatarUrl) && existing.avatarUrl !== image) changes.avatarUrl = image;
+    if (!Object.keys(changes).length) return existing;
+    const [updated] = await db.update(schema.users).set(changes).where(eq(schema.users.id, au.id)).returning();
     return updated;
   }
 
@@ -38,7 +46,7 @@ export async function syncUser(au: AuthUser): Promise<User> {
     if (!au.emailVerified) throw new Error("Verify your email address to access your existing projects.");
     const user = await db.transaction(async (tx) => {
       await tx.update(schema.users).set({ email: `migrated+${legacy.id}@invalid` }).where(eq(schema.users.id, legacy.id));
-      const [created] = await tx.insert(schema.users).values({ id: au.id, email, name: legacy.name }).returning();
+      const [created] = await tx.insert(schema.users).values({ id: au.id, email, name: legacy.name, avatarUrl: legacy.avatarUrl ?? providerImage(au) }).returning();
       await tx.update(schema.projectMembers).set({ userId: au.id }).where(eq(schema.projectMembers.userId, legacy.id));
       await tx.update(schema.invites).set({ invitedBy: au.id }).where(eq(schema.invites.invitedBy, legacy.id));
       await tx.delete(schema.users).where(eq(schema.users.id, legacy.id));
@@ -47,7 +55,7 @@ export async function syncUser(au: AuthUser): Promise<User> {
     return user;
   }
 
-  const [created] = await db.insert(schema.users).values({ id: au.id, email, name }).onConflictDoNothing().returning();
+  const [created] = await db.insert(schema.users).values({ id: au.id, email, name, avatarUrl: providerImage(au) }).onConflictDoNothing().returning();
   if (!created) {
     const [row] = await db.select().from(schema.users).where(eq(schema.users.id, au.id));
     return row;
@@ -61,6 +69,12 @@ export const getUser = cache(async (): Promise<User | null> => {
   const { data } = await auth.getSession();
   if (!data?.user) return null;
   return syncUser(data.user);
+});
+
+/** Whether Neon Auth has verified the signed-in user's email address. Cached per request. */
+export const emailVerified = cache(async (): Promise<boolean> => {
+  const { data } = await auth.getSession();
+  return !!data?.user?.emailVerified;
 });
 
 export async function requireUser(): Promise<User> {

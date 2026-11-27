@@ -2,13 +2,14 @@ import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb, schema } from "@/db";
 import type { CommentMeta } from "@/db/schema";
-import { listComments } from "@/lib/queries";
+import { widgetThreads } from "@/lib/widget-data";
 import { requireWidgetUser, widgetUser } from "@/lib/widget-auth";
 import { handle, json, markWidgetSeen, normalisePageUrl, num, preflight, projectForKey, str, ApiError } from "@/lib/widget-api";
 
 export const OPTIONS = preflight;
 
-// GET /api/widget/comments?key=pk_xxx&url=https://site/page
+// GET /api/widget/comments?key=pk_xxx&url=https://site/page[&scope=all]
+// scope=all lists threads from every page of the project (the widget's inbox).
 export function GET(req: Request) {
   return handle(req, async () => {
     const { searchParams } = new URL(req.url);
@@ -20,7 +21,12 @@ export function GET(req: Request) {
     // Comments are only visible to signed-in, invited project members.
     const user = await widgetUser(req, project);
     if (!user) return json(req, { comments: [], user: null });
-    return json(req, { comments: await listComments({ projectId: project.id, pageUrl }), user });
+    const all = searchParams.get("scope") === "all";
+    return json(req, {
+      comments: await widgetThreads(project.id, user.id, all ? undefined : pageUrl),
+      user,
+      project: { name: project.name, prefix: project.prefix },
+    });
   });
 }
 
@@ -65,12 +71,14 @@ export function POST(req: Request) {
         scroll: meta.scroll,
         devicePixelRatio: meta.devicePixelRatio,
         elementText: typeof meta.elementText === "string" ? meta.elementText.slice(0, 200) : undefined,
+        element: typeof meta.element === "string" ? meta.element.slice(0, 200) : undefined,
+        quote: typeof meta.quote === "string" && meta.quote.trim() ? meta.quote.trim().slice(0, 500) : undefined,
       },
     };
 
     const db = await getDb();
     const [created] = await db.insert(schema.comments).values(row).returning();
     const { screenshot: shot, ...rest } = created;
-    return json(req, { comment: { ...rest, hasScreenshot: !!shot, replies: [] } }, 201);
+    return json(req, { comment: { ...rest, hasScreenshot: !!shot, reactions: [], replies: [] } }, 201);
   });
 }

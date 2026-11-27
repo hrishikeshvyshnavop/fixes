@@ -30,6 +30,10 @@ export type CommentMeta = {
   scroll?: { x: number; y: number };
   devicePixelRatio?: number;
   elementText?: string;
+  /** Short description of the picked element, e.g. "button.cta" (shown in the thread). */
+  element?: string;
+  /** Text the person selected on the page when starting the comment. */
+  quote?: string;
 };
 
 export const comments = pgTable(
@@ -55,6 +59,7 @@ export const comments = pgTable(
     authorName: text("author_name").notNull(),
     // Signed-in widget user who wrote it (null for comments from before widget sign-in).
     authorId: text("author_id"),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
     status: text("status", { enum: ["open", "resolved"] }).notNull().default("open"),
     screenshot: text("screenshot"), // JPEG data URL (MVP: stored inline)
     meta: jsonb("meta").$type<CommentMeta>().notNull().default({}),
@@ -73,6 +78,7 @@ export const replies = pgTable(
     body: text("body").notNull(),
     authorName: text("author_name").notNull(),
     authorId: text("author_id"),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("replies_comment_idx").on(t.commentId)],
@@ -84,7 +90,19 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(), // stored lower-cased
   name: text("name").notNull(),
+  // Ready-to-use image URL: an uploaded photo (/api/avatars/<id>?v=…) or the Google profile photo. Null → initials.
+  avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Uploaded profile photos, kept out of `users` so loading a user never pulls image bytes.
+export const userAvatars = pgTable("user_avatars", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  mime: text("mime").notNull(),
+  data: text("data").notNull(), // base64
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type Role = "owner" | "member";
@@ -156,6 +174,38 @@ export const widgetSessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("widget_sessions_user_idx").on(t.userId)],
+);
+
+// Emoji reactions on a comment or a reply (target_id). comment_id is the thread, for cascade.
+export const reactions = pgTable(
+  "reactions",
+  {
+    commentId: text("comment_id")
+      .notNull()
+      .references(() => comments.id, { onDelete: "cascade" }),
+    targetId: text("target_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.targetId, t.userId, t.emoji] }), index("reactions_comment_idx").on(t.commentId)],
+);
+
+// When each user last opened each feedback item in the dashboard (drives "new" vs "opened").
+export const commentViews = pgTable(
+  "comment_views",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    commentId: text("comment_id")
+      .notNull()
+      .references(() => comments.id, { onDelete: "cascade" }),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.commentId] })],
 );
 
 export type User = typeof users.$inferSelect;

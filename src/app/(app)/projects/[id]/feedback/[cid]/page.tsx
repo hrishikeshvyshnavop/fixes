@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
+import { notFound, redirect } from "next/navigation";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { addReply, deleteComment, setStatus } from "@/app/actions";
 import { ago, browser, hue, pathOf, shortDate } from "@/lib/ui";
 import { getAccess } from "@/lib/auth";
+import { getAppUrl } from "@/lib/app-url";
+import { markCommentSeen } from "@/lib/queries";
+import { FeedbackLinks } from "@/components/feedback-links";
 import { Swatch } from "@/components/sidebar-nav";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, OpenStatusIcon, ResolvedStatusIcon, TrashIcon } from "@/components/icons";
 import { Avatar, PanelHeader, button } from "@/components/feedback";
@@ -19,21 +22,57 @@ function Prop({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export default async function FeedbackDetail({ params }: { params: Promise<{ id: string; cid: string }> }) {
-  const { id, cid } = await params;
-  const { project } = await getAccess(id);
+  const { id, cid: rawCid } = await params;
+  const ref = decodeURIComponent(rawCid);
+  const { project, user } = await getAccess(id);
   const db = await getDb();
-  const [c] = await db
+  // Canonical URLs use the readable id (DEM-12, or just 12); old links with the internal id still work.
+  const keyMatch = ref.match(/^(?:([a-z][a-z0-9]*)-)?(\d+)$/i);
+  const [byId] = await db
     .select()
     .from(schema.comments)
-    .where(and(eq(schema.comments.id, cid), eq(schema.comments.projectId, id)));
+    .where(and(eq(schema.comments.id, ref), eq(schema.comments.projectId, id)));
+  const [byKey] =
+    // Any prefix is accepted (the number is unique per project), so links survive identifier renames.
+    !byId && keyMatch
+      ? await db
+          .select()
+          .from(schema.comments)
+          .where(and(eq(schema.comments.projectId, id), eq(schema.comments.number, Number(keyMatch[2]))))
+      : [];
+  const c = byId ?? byKey;
   if (!c) notFound();
+  if (ref !== `${project.prefix}-${c.number}`) redirect(`/projects/${id}/feedback/${project.prefix}-${c.number}`);
+  const cid = c.id;
+  await markCommentSeen(user.id, cid); // opening it clears the "new" dot
   const replies = await db
     .select()
     .from(schema.replies)
     .where(eq(schema.replies.commentId, cid))
     .orderBy(asc(schema.replies.createdAt));
+  const authorIds = [...new Set([c.authorId, ...replies.map((r) => r.authorId)].filter((x): x is string => !!x))];
+  const photos = new Map(
+    authorIds.length
+      ? (
+          await db
+            .select({ id: schema.users.id, url: schema.users.avatarUrl })
+            .from(schema.users)
+            .where(inArray(schema.users.id, authorIds))
+        ).map((u) => [u.id, u.url])
+      : [],
+  );
+  const photo = (id: string | null) => (id ? (photos.get(id) ?? null) : null);
 
   const key = `${project.prefix}-${c.number}`;
+  const permalink = `${(await getAppUrl()).url}/projects/${id}/feedback/${key}`;
+  let onPage: string | null = null;
+  try {
+    const u = new URL(c.fullUrl);
+    u.searchParams.set("fixes_thread", c.id); // the widget opens this thread on load
+    onPage = u.toString();
+  } catch {
+    /* not a URL (e.g. an image/PDF review) */
+  }
   const resolved = c.status === "resolved";
 
   const statusForm = (
@@ -59,6 +98,8 @@ export default async function FeedbackDetail({ params }: { params: Promise<{ id:
     <>
       <PanelHeader
         right={
+          <div className="flex items-center gap-1">
+          <FeedbackLinks id={key} link={permalink} onPage={onPage} />
           <form action={deleteComment}>
             <input type="hidden" name="projectId" value={id} />
             <input type="hidden" name="commentId" value={c.id} />
@@ -66,6 +107,7 @@ export default async function FeedbackDetail({ params }: { params: Promise<{ id:
               <TrashIcon size={14} /> <span className="hidden sm:inline">Delete</span>
             </button>
           </form>
+          </div>
         }
       >
         <Swatch name={project.name} hue={hue(project.id)} icon={project.icon} color={project.color} size={16} />
@@ -81,7 +123,7 @@ export default async function FeedbackDetail({ params }: { params: Promise<{ id:
         <div className="min-w-0 flex-1 lg:overflow-y-auto">
           <div className="mx-auto max-w-3xl px-6 py-8">
             <div className="flex items-start gap-3">
-              <Avatar name={c.authorName} size={28} />
+              <Avatar name={c.authorName} src={photo(c.authorId)} size={28} />
               <div className="min-w-0">
                 <div className="text-[13px]">
                   <span className="font-medium">{c.authorName}</span>
@@ -119,7 +161,7 @@ export default async function FeedbackDetail({ params }: { params: Promise<{ id:
                   <span className="absolute top-1.5 -left-[23.5px] h-2 w-2 rounded-full bg-muted-foreground/60" />
                   <div className="rounded-lg border border-border bg-card px-4 py-3">
                     <div className="flex items-center gap-2 text-[13px]">
-                      <Avatar name={r.authorName} size={18} />
+                      <Avatar name={r.authorName} src={photo(r.authorId)} size={18} />
                       <span className="font-medium">{r.authorName}</span>
                       <span className="text-muted-foreground">{ago(r.createdAt)}</span>
                     </div>
@@ -158,7 +200,7 @@ export default async function FeedbackDetail({ params }: { params: Promise<{ id:
             </Prop>
             <Prop label="Reporter">
               <span className="inline-flex items-center gap-1.5">
-                <Avatar name={c.authorName} size={18} />
+                <Avatar name={c.authorName} src={photo(c.authorId)} size={18} />
                 {c.authorName}
               </span>
             </Prop>

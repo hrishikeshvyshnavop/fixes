@@ -4,10 +4,10 @@ import { getDb, schema } from "@/db";
 import { allowBlockedOrigin, deleteProject, removeMember, revokeInvite, setMemberRole } from "@/app/actions";
 import { getAccess } from "@/lib/auth";
 import { TYPE_META, isProjectType, supportsWidget } from "@/lib/project-types";
-import { ago, expiresIn, hue, initials } from "@/lib/ui";
+import { ago, expiresIn, hue } from "@/lib/ui";
 import { Swatch } from "@/components/sidebar-nav";
 import { ChevronRightIcon, ExternalLinkIcon, TrashIcon } from "@/components/icons";
-import { PanelHeader, button } from "@/components/feedback";
+import { Avatar, PanelHeader, button } from "@/components/feedback";
 import { InviteForm, ProjectSettingsForm } from "@/components/settings-forms";
 import { Bookmarklet, CheckAgainButton, InstallTabs } from "@/components/install-tabs";
 import { getAppUrl } from "@/lib/app-url";
@@ -47,6 +47,7 @@ export default async function ProjectSettings({ params }: { params: Promise<{ id
       userId: schema.users.id,
       name: schema.users.name,
       email: schema.users.email,
+      avatarUrl: schema.users.avatarUrl,
       role: schema.projectMembers.role,
       joined: schema.projectMembers.createdAt,
     })
@@ -201,9 +202,7 @@ export default async function ProjectSettings({ params }: { params: Promise<{ id
                 const lastOwner = m.role === "owner" && ownerCount <= 1;
                 return (
                   <li key={m.userId} className="flex items-center gap-3 py-2.5">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground ring-1 ring-border">
-                      {initials(m.name)}
-                    </span>
+                    <Avatar name={m.name} src={m.avatarUrl} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-medium">
                         {m.name}

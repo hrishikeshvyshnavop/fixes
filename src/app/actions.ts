@@ -11,6 +11,7 @@ import { COLOR_RE, ICON_RE } from "@/lib/project-icons";
 import { isProjectType } from "@/lib/project-types";
 import { parseOrigins } from "@/lib/origins";
 import { getAppUrl } from "@/lib/app-url";
+import { inviteEmail, sendEmail } from "@/lib/email";
 
 const field = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,7 +21,7 @@ const INVITE_DAYS = 7;
 // Sidebar counts appear on every page, so refresh the whole tree after a mutation.
 const refresh = () => revalidatePath("/", "layout");
 
-export type ActionState = { ok?: string; error?: string; link?: string } | undefined;
+export type ActionState = { ok?: string; error?: string; link?: string; emailed?: boolean; emailError?: string } | undefined;
 
 // ---------- projects ----------
 
@@ -168,9 +169,9 @@ async function issueInvite(opts: {
 
 export async function createInvite(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const projectId = field(fd, "projectId");
-  let user;
+  let user, project;
   try {
-    ({ user } = await requireOwner(projectId));
+    ({ user, project } = await requireOwner(projectId));
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -181,10 +182,26 @@ export async function createInvite(_prev: ActionState, fd: FormData): Promise<Ac
   const res = await issueInvite({ projectId, email, role, invitedBy: user.id, origin: (await getAppUrl()).url });
   if ("error" in res) return { error: `${email} is already a member.` };
   revalidatePath(`/projects/${projectId}/settings`);
-  return { ok: `Invite created for ${email}`, link: res.link };
+  const mail = await sendEmail({
+    to: email,
+    replyTo: user.email,
+    ...inviteEmail({ inviter: user.name, role, invites: [{ projectName: project.name, link: res.link }], days: INVITE_DAYS }),
+  });
+  return mail.sent
+    ? { ok: `Invite emailed to ${email}`, link: res.link, emailed: true }
+    : { ok: `Invite created for ${email}`, link: res.link, emailed: false, emailError: mail.reason };
 }
 
-export type InviteResult = { email: string; projectId: string; projectName: string; link?: string; error?: string };
+export type InviteResult = {
+  email: string;
+  projectId: string;
+  projectName: string;
+  link?: string;
+  error?: string;
+  /** Set when a link was created: whether the invite email went out. */
+  emailed?: boolean;
+  emailError?: string;
+};
 export type InviteBatchState = { results?: InviteResult[]; error?: string } | undefined;
 
 const MAX_EMAILS = 25;
@@ -238,6 +255,23 @@ export async function createInvites(_prev: InviteBatchState, fd: FormData): Prom
       results.push({ email, projectId, projectName, ...res });
     }
     if (projectName) revalidatePath(`/projects/${projectId}/settings`);
+  }
+
+  // One email per person, covering every project they were invited to.
+  for (const email of emails) {
+    const mine = results.filter((r) => r.email === email && r.link);
+    if (!mine.length) continue;
+    const mail = await sendEmail({
+      to: email,
+      replyTo: user.email,
+      ...inviteEmail({
+        inviter: user.name,
+        role,
+        invites: mine.map((r) => ({ projectName: r.projectName, link: r.link! })),
+        days: INVITE_DAYS,
+      }),
+    });
+    for (const r of mine) Object.assign(r, mail.sent ? { emailed: true } : { emailed: false, emailError: mail.reason });
   }
   return { results };
 }

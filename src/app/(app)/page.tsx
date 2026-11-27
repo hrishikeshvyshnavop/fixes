@@ -18,7 +18,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
     .innerJoin(schema.projectMembers, eq(schema.projectMembers.projectId, schema.projects.id))
     .where(eq(schema.projectMembers.userId, user.id))
     .orderBy(asc(schema.projects.createdAt));
-  const all = await listComments({ projectIds: projects.map((p) => p.id) });
+  const all = await listComments({ projectIds: projects.map((p) => p.id), viewerId: user.id });
 
   const counts = {
     all: all.length,

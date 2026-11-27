@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, Copy, UserPlus, X } from "lucide-react";
+import { Check, Copy, MailCheck, UserPlus, X } from "lucide-react";
 import { createInvites, type InviteBatchState, type InviteResult } from "@/app/actions";
 import { hue } from "@/lib/ui";
 import { ProjectIcon } from "./project-icon";
@@ -324,7 +324,7 @@ function InviteDialog({
                   Cancel
                 </button>
                 <button disabled={!canSubmit} className={button.primary}>
-                  {pending ? "Creating…" : "Create invites"}
+                  {pending ? "Sending…" : "Send invites"}
                 </button>
               </div>
             </div>
@@ -352,20 +352,38 @@ function Results({ results, onMore, onDone }: { results: InviteResult[]; onMore:
     }
   };
   const allText = ok.map((r) => `${r.email} (${r.projectName}): ${r.link}`).join("\n");
+  const emailed = ok.filter((r) => r.emailed);
+  const notEmailed = ok.filter((r) => !r.emailed);
+  const people = (rs: InviteResult[]) => {
+    const list = [...new Set(rs.map((r) => r.email))];
+    return list.length <= 2 ? list.join(" and ") : `${list.length} people`;
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <p className="text-[13px] text-muted-foreground">
-          {ok.length ? (
-            <>
-              Send each person their link. Links are single-use, expire in 7 days, and only work for someone signed in with that
-              email. They&apos;re shown only once.
-            </>
-          ) : (
-            "No invites were created."
-          )}
-        </p>
+        {ok.length > 0 && notEmailed.length === 0 ? (
+          <p className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[13px]">
+            <MailCheck size={15} className="mt-0.5 shrink-0 text-emerald-500" />
+            <span>
+              Invitation email sent to {people(emailed)}. They&apos;ll also see it in their Fixes notifications. The links below
+              are a backup in case an email doesn&apos;t arrive.
+            </span>
+          </p>
+        ) : ok.length > 0 ? (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px]">
+            {emailed.length > 0 && <>Emailed {people(emailed)}. </>}
+            Couldn&apos;t email {people(notEmailed)} ({notEmailed[0].emailError ?? "email isn't set up"}), so copy the link
+            below and send it yourself. The invite also appears in their Fixes notifications once they sign in.
+          </p>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">No invites were created.</p>
+        )}
+        {ok.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Links are single-use, expire in 7 days, only work for someone signed in with that email, and are shown only once.
+          </p>
+        )}
 
         {ok.length > 0 && (
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
@@ -374,7 +392,18 @@ function Results({ results, onMore, onDone }: { results: InviteResult[]; onMore:
               return (
                 <li key={key} className="px-3 py-2.5">
                   <div className="flex items-center justify-between gap-2 text-[13px]">
-                    <span className="min-w-0 truncate font-medium">{r.email}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-medium">{r.email}</span>
+                      {r.emailed ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                          <MailCheck size={11} /> Emailed
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">
+                          Not emailed
+                        </span>
+                      )}
+                    </span>
                     <span className="shrink-0 text-xs text-muted-foreground">{r.projectName}</span>
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">

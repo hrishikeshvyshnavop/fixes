@@ -32,6 +32,6 @@ export function POST(req: Request, { params }: { params: Promise<{ id: string }>
         authorId: user.id,
       })
       .returning();
-    return json(req, { reply }, 201);
+    return json(req, { reply: { ...reply, reactions: [] } }, 201);
   });
 }
